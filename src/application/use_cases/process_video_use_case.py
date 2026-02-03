@@ -8,8 +8,10 @@ import logging
 import tempfile
 from typing import Optional
 from src.domain.entities.video_entity import VideoEntity
+from src.domain.entities.user_entity import UserEntity
 from src.application.ports.storage_port import StoragePort
 from src.application.ports.message_producer_port import MessageProducerPort
+from src.application.ports.repository_port import VideoRepositoryPort
 from src.application.services.video_processing_service import VideoProcessingService
 
 logger = logging.getLogger(__name__)
@@ -22,7 +24,8 @@ class ProcessVideoUseCase:
         self,
         storage: StoragePort,
         message_producer: MessageProducerPort,
-        video_service: VideoProcessingService
+        video_service: VideoProcessingService,
+        repository: VideoRepositoryPort
     ):
         """
         Initialize use case with required dependencies
@@ -31,18 +34,32 @@ class ProcessVideoUseCase:
             storage: Storage adapter (S3)
             message_producer: Message producer adapter (Kafka)
             video_service: Video processing service
+            repository: Video repository
         """
         self.storage = storage
         self.message_producer = message_producer
         self.video_service = video_service
+        self.repository = repository
         logger.info("ProcessVideoUseCase inicializado")
     
-    def execute(self, video_entity: VideoEntity, file_content: bytes, output_topic: str) -> bool:
+    def execute(self, video_id: str, file_content: bytes, output_topic: str) -> bool:
         """
         Execute video processing workflow
         
         Args:
-            video_entity: Video entity with metadata
+            video_id: ID do vídeo a ser processado
+            file_content: Video file content in bytes
+            output_topic: Kafka topic to send completion message
+            
+        Returns:
+            True if processing was successful, False otherwise
+        """
+    def execute(self, video_id: str, file_content: bytes, output_topic: str) -> bool:
+        """
+        Execute video processing workflow
+        
+        Args:
+            video_id: ID do vídeo a ser processado
             file_content: Video file content in bytes
             output_topic: Kafka topic to send completion message
             
@@ -55,52 +72,86 @@ class ProcessVideoUseCase:
         
         try:
             logger.info(f"=== Iniciando processamento do vídeo ===")
-            logger.info(f"Video ID: {video_entity.video_id}")
-            logger.info(f"Path: {video_entity.path}")
+            logger.info(f"Video ID: {video_id}")
             
-            # 1. Save video to temporary file
-            temp_video_path = self._save_temp_video(file_content, video_entity.path)
-            if not temp_video_path:
+            # 1. Buscar vídeo e usuário no banco de dados
+            result = self.repository.get_video_with_user(video_id)
+            if not result:
+                logger.error(f"Vídeo não encontrado no banco: {video_id}")
                 return False
             
-            # 2. Extract frames from video
+            video_entity, user_entity = result
+            logger.info(f"Vídeo encontrado: {video_entity.titulo or video_entity.video_name}")
+            logger.info(f"Usuário: {user_entity.name} ({user_entity.email})")
+            
+            # 2. Verificar status do vídeo
+            if video_entity.status != 1:
+                logger.warning(f"Vídeo com status inválido: {video_entity.status}. Esperado: 1")
+                return False
+            
+            # 3. Atualizar status para "processando" (2)
+            if not self.repository.update_video_status(video_id, 2):
+                logger.error("Falha ao atualizar status para processando")
+                return False
+            
+            logger.info("Status atualizado para: 2 (Processando)")
+            
+            # 4. Save video to temporary file
+            temp_video_path = self._save_temp_video(file_content, video_entity.video_name or "video.mp4")
+            if not temp_video_path:
+                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                return False
+            
+            # 5. Extract frames from video
             logger.info("Extraindo frames do vídeo...")
             frame_paths = self.video_service.extract_frames(temp_video_path, num_frames=4)
             
             if not frame_paths or len(frame_paths) == 0:
                 logger.error("Nenhum frame foi extraído do vídeo")
+                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
                 return False
             
             logger.info(f"{len(frame_paths)} frames extraídos com sucesso")
             
-            # 3. Create ZIP with frames
+            # 6. Create ZIP with frames
             logger.info("Criando arquivo ZIP com as imagens...")
             temp_zip_path = self._create_zip_with_frames(frame_paths)
             
             if not temp_zip_path:
+                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
                 return False
             
-            # 4. Upload ZIP to S3
-            zip_s3_key = self._get_zip_s3_key(video_entity.path)
+            # 7. Upload ZIP to S3
+            zip_s3_key = self._get_zip_s3_key(video_entity.video_name or f"{video_id}.mp4")
             logger.info(f"Fazendo upload do ZIP para S3: {zip_s3_key}")
             
             upload_success = self.storage.upload_file(temp_zip_path, zip_s3_key)
             
             if not upload_success:
                 logger.error("Falha ao fazer upload do ZIP para S3")
+                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
                 return False
             
             logger.info("ZIP enviado com sucesso para S3")
             
-            # 5. Send completion message to Kafka
-            completion_message = {
-                "video_id": video_entity.video_id,
-                "path": zip_s3_key,
-                "message": "Pronto para download"
+            # 8. Atualizar status para "finalizado" (3) e salvar caminho do ZIP
+            if not self.repository.update_video_status(video_id, 3, zip_s3_key):
+                logger.error("Falha ao atualizar status para finalizado")
+                return False
+            
+            logger.info("Status atualizado para: 3 (Finalizado)")
+            
+            # 9. Send success message to Kafka
+            success_message = {
+                "titulo": video_entity.titulo or video_entity.video_name or "Vídeo sem título",
+                "status": "Finalizado",
+                "mensagem": "Seu zip está pronto para download",
+                "emailUsuario": user_entity.email,
+                "nomeUsuario": user_entity.name or "Usuário"
             }
             
             logger.info(f"Enviando mensagem de conclusão para tópico '{output_topic}'")
-            message_sent = self.message_producer.send_message(output_topic, completion_message)
+            message_sent = self.message_producer.send_message(output_topic, success_message)
             
             if not message_sent:
                 logger.error("Falha ao enviar mensagem de conclusão")
@@ -111,11 +162,55 @@ class ProcessVideoUseCase:
             
         except Exception as e:
             logger.error(f"Erro durante processamento do vídeo: {e}", exc_info=True)
+            # Tentar buscar dados do vídeo para enviar mensagem de erro
+            try:
+                result = self.repository.get_video_with_user(video_id)
+                if result:
+                    video_entity, user_entity = result
+                    self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+            except:
+                pass
             return False
             
         finally:
             # Cleanup temporary files
             self._cleanup_temp_files(temp_video_path, frame_paths, temp_zip_path)
+    
+    def _handle_processing_error(
+        self, 
+        video_id: str, 
+        video_entity: VideoEntity, 
+        user_entity: UserEntity, 
+        output_topic: str
+    ):
+        """
+        Trata erro no processamento do vídeo
+        
+        Args:
+            video_id: ID do vídeo
+            video_entity: Entidade do vídeo
+            user_entity: Entidade do usuário
+            output_topic: Tópico Kafka para enviar mensagem
+        """
+        try:
+            # Atualizar status para "erro" (4)
+            self.repository.update_video_status(video_id, 4)
+            logger.info("Status atualizado para: 4 (Erro)")
+            
+            # Enviar mensagem de erro
+            error_message = {
+                "titulo": video_entity.titulo or video_entity.video_name or "Vídeo sem título",
+                "status": "Erro",
+                "mensagem": "Houve um erro no processamento do seu vídeo",
+                "emailUsuario": user_entity.email,
+                "nomeUsuario": user_entity.name or "Usuário"
+            }
+            
+            self.message_producer.send_message(output_topic, error_message)
+            logger.info("Mensagem de erro enviada ao tópico")
+            
+        except Exception as e:
+            logger.error(f"Erro ao tratar falha no processamento: {e}", exc_info=True)
     
     def _save_temp_video(self, file_content: bytes, original_path: str) -> Optional[str]:
         """

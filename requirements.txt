@@ -1,0 +1,27 @@
+# Kafka
+confluent-kafka
+
+# AWS S3
+boto3
+
+# Configuration
+python-dotenv
+
+# Logging
+python-json-logger
+
+# FastAPI
+fastapi
+uvicorn[standard]
+
+# Database
+psycopg2-binary
+
+# Testing
+pytest
+
+# Validation
+pydantic
+
+# Video processing
+opencv-python

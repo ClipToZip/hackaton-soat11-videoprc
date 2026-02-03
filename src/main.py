@@ -12,6 +12,8 @@ from src.adapters.input.consumers.kafka_consumer import KafkaS3Consumer
 from src.adapters.input.routers import health_controller
 from src.adapters.output.persistence.s3.s3_client import S3Client
 from src.adapters.output.producers.kafka_producer import KafkaProducer
+from src.adapters.output.persistence.database_connection import DatabaseConnection
+from src.adapters.output.persistence.repositories.video_repository import VideoRepository
 from src.application.services.video_processing_service import VideoProcessingService
 from src.application.use_cases.process_video_use_case import ProcessVideoUseCase
 
@@ -19,6 +21,8 @@ from src.application.use_cases.process_video_use_case import ProcessVideoUseCase
 kafka_consumer = None
 s3_client = None
 kafka_producer = None
+db_connection = None
+video_repository = None
 process_video_use_case = None
 consumer_thread = None
 executor = None  # ThreadPoolExecutor para processamento paralelo
@@ -35,52 +39,51 @@ def setup_logging():
     )
 
 
-def process_video_task(message_data, file_content: bytes):
+def process_video_task(video_id: str, file_content: bytes):
     """
     Tarefa de processamento de vídeo (executada em thread separada)
     
     Args:
-        message_data: VideoEntity com dados da mensagem do Kafka
+        video_id: ID do vídeo no banco de dados
         file_content: Conteúdo do arquivo do S3 em bytes
     """
     logger = logging.getLogger(__name__)
     
     try:
         logger.info(f"=== [Thread-{threading.current_thread().name}] Processando vídeo ===")
-        logger.info(f"Video ID: {message_data.video_id}")
-        logger.info(f"Path: {message_data.path}")
+        logger.info(f"Video ID: {video_id}")
         logger.info(f"Tamanho do arquivo: {len(file_content)} bytes")
         
         # Execute video processing use case
         output_topic = Settings.KAFKA_OUTPUT_TOPIC
-        success = process_video_use_case.execute(message_data, file_content, output_topic)
+        success = process_video_use_case.execute(video_id, file_content, output_topic)
         
         if success:
-            logger.info(f"✅ [Video ID: {message_data.video_id}] Vídeo processado com sucesso!")
+            logger.info(f"✅ [Video ID: {video_id}] Vídeo processado com sucesso!")
         else:
-            logger.error(f"❌ [Video ID: {message_data.video_id}] Falha ao processar vídeo")
+            logger.error(f"❌ [Video ID: {video_id}] Falha ao processar vídeo")
         
         return success
             
     except Exception as e:
-        logger.error(f"❌ [Video ID: {message_data.video_id}] Erro no processamento: {e}", exc_info=True)
+        logger.error(f"❌ [Video ID: {video_id}] Erro no processamento: {e}", exc_info=True)
         return False
 
 
-def custom_message_handler(message_data, file_content: bytes):
+def custom_message_handler(video_id: str, file_content: bytes):
     """
     Handler que submete o processamento para o ThreadPoolExecutor
     
     Args:
-        message_data: VideoEntity com dados da mensagem do Kafka
+        video_id: ID do vídeo no banco de dados
         file_content: Conteúdo do arquivo do S3 em bytes
     """
     logger = logging.getLogger(__name__)
     
     try:
         # Submete a tarefa para o executor (processamento assíncrono)
-        future = executor.submit(process_video_task, message_data, file_content)
-        logger.info(f"🎬 [Video ID: {message_data.video_id}] Tarefa submetida para processamento")
+        future = executor.submit(process_video_task, video_id, file_content)
+        logger.info(f"🎬 [Video ID: {video_id}] Tarefa submetida para processamento")
         
         # Log do número de tarefas em andamento
         # Note: _work_queue.qsize() pode não ser 100% preciso mas dá uma ideia
@@ -98,6 +101,8 @@ async def lifespan(app: FastAPI):
     """
     logger = logging.getLogger(__name__)
     global kafka_consumer, s3_client, kafka_producer, process_video_use_case, consumer_thread, executor
+    global db_connection, video_repository
+    global process_video_use_case, consumer_thread, executor
     
     # Startup
     logger.info("🚀 Iniciando aplicação...")
@@ -110,6 +115,15 @@ async def lifespan(app: FastAPI):
         # Inicializa ThreadPoolExecutor para processamento paralelo
         executor = ThreadPoolExecutor(max_workers=Settings.MAX_WORKERS)
         logger.info(f"✅ ThreadPoolExecutor inicializado com {Settings.MAX_WORKERS} workers")
+        
+        # Inicializa Database Connection
+        db_connection = DatabaseConnection()
+        db_connection.connect()
+        logger.info("✅ Conexão com PostgreSQL estabelecida")
+        
+        # Inicializa Video Repository
+        video_repository = VideoRepository(db_connection)
+        logger.info("✅ Video Repository inicializado")
         
         # Inicializa S3 Client
         s3_client = S3Client()
@@ -127,7 +141,8 @@ async def lifespan(app: FastAPI):
         process_video_use_case = ProcessVideoUseCase(
             storage=s3_client,
             message_producer=kafka_producer,
-            video_service=video_service
+            video_service=video_service,
+            repository=video_repository
         )
         logger.info("✅ Process Video Use Case inicializado")
         
@@ -166,6 +181,10 @@ async def lifespan(app: FastAPI):
     if kafka_producer:
         kafka_producer.close()
         logger.info("✅ Kafka Producer encerrado")
+    
+    if db_connection:
+        db_connection.close()
+        logger.info("✅ Conexão com PostgreSQL fechada")
     
     if consumer_thread and consumer_thread.is_alive():
         consumer_thread.join(timeout=5)

@@ -22,6 +22,7 @@ pytest
 
 # Validation
 pydantic
+pydantic[email]
 
 # Video processing
 opencv-python

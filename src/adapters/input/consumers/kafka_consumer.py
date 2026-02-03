@@ -8,7 +8,6 @@ from typing import Callable, Optional
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from src.config.settings import Settings
 from src.adapters.output.persistence.s3.s3_client import S3Client
-from src.domain.entities.video_entity import VideoEntity
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ class KafkaS3Consumer:
         
         Args:
             message_handler: Função customizada para processar a mensagem e arquivo do S3.
-                           Recebe (message_data: dict, file_content: bytes) como parâmetros.
+                           Recebe (video_id: str, file_content: bytes) como parâmetros.
         """
         self.config = {
             'bootstrap.servers': Settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -38,17 +37,16 @@ class KafkaS3Consumer:
         
         logger.info(f"Consumer Kafka inicializado para o tópico: {Settings.KAFKA_TOPIC}")
     
-    def _default_message_handler(self, message_data: dict, file_content: bytes):
+    def _default_message_handler(self, video_id: str, file_content: bytes):
         """
         Handler padrão para processar mensagem e arquivo
         
         Args:
-            message_data: Dados da mensagem do Kafka
+            video_id: ID do vídeo
             file_content: Conteúdo do arquivo do S3
         """
-        logger.info(f"Processando mensagem: {message_data}")
+        logger.info(f"Processando vídeo ID: {video_id}")
         logger.info(f"Tamanho do arquivo: {len(file_content)} bytes")
-        # Adicione aqui o processamento do arquivo conforme necessário
     
     def process_message(self, message):
         """
@@ -61,22 +59,33 @@ class KafkaS3Consumer:
             # Parse da mensagem
             message_value = message.value().decode('utf-8')
             message_data = json.loads(message_value)
-            video_entity = VideoEntity(**message_data)
             
-            logger.info(f"Mensagem recebida: {video_entity}")
+            # Extrair video_id e path da mensagem
+            video_id = message_data.get('video_id')
+            video_path = message_data.get('path')
+            
+            if not video_id:
+                logger.error("Mensagem sem video_id")
+                return
+            
+            if not video_path:
+                logger.error(f"Mensagem sem path para o vídeo {video_id}")
+                return
+            
+            logger.info(f"Mensagem recebida - Video ID: {video_id}, Path: {video_path}")
             
             # Busca o arquivo do S3
-            file_content = self.s3_client.get_file_content(video_entity.path)
+            file_content = self.s3_client.get_file_content(video_path)
             
             if file_content is None:
-                logger.error(f"Falha ao obter conteúdo do arquivo {video_entity.path}")
+                logger.error(f"Falha ao obter conteúdo do arquivo {video_path}")
                 return
             
             # Processa o arquivo usando o handler
             handler = self.message_handler or self._default_message_handler
-            handler(video_entity, file_content)
+            handler(video_id, file_content)
             
-            logger.info(f"Mensagem processada com sucesso para o arquivo: {video_entity.path}")
+            logger.info(f"Mensagem processada com sucesso para o vídeo: {video_id}")
             
         except json.JSONDecodeError as e:
             logger.error(f"Erro ao decodificar JSON da mensagem: {e}")

@@ -1,7 +1,4 @@
-# Kafka
-confluent-kafka
-
-# AWS S3
+# AWS Services (SQS, S3)
 boto3
 
 # Configuration

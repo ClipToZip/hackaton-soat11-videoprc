@@ -1,44 +1,49 @@
 # Hackaton SOAT11 - Video Processor
 
-Aplicação Python para processar vídeos do S3, extraindo frames e gerando arquivos ZIP, com processamento paralelo via Kafka e integração com PostgreSQL.
+Aplicação Python para processar vídeos do S3, extraindo frames e gerando arquivos ZIP, com processamento paralelo via **AWS SQS** e integração com PostgreSQL.
 
 ## 📋 Descrição
 
 Esta aplicação roda um servidor FastAPI que:
-- Escuta eventos do Kafka com informações de vídeos
-- Gerencia processamento de vídeos com banco de dados PostgreSQL
+- Escuta mensagens do **AWS SQS** com informações de vídeos
+- Gerencia processamento de vídeos com banco de dados PostgreSQL (RDS)
 - Controla status de processamento (aguardando, processando, finalizado, erro)
 - Baixa vídeos do AWS S3
 - Extrai frames distribuídos ao longo do vídeo (início, meio e fim)
 - Gera arquivo ZIP com as imagens
 - Faz upload do ZIP no S3
-- Envia mensagem de conclusão com dados do usuário para tópico Kafka
+- Envia mensagem de conclusão com dados do usuário para fila SQS de saída
 - **Processa múltiplos vídeos simultaneamente**
 
 ## 🚀 Funcionalidades
 
 - ✅ **Processamento Paralelo** - Processa múltiplos vídeos ao mesmo tempo
-- ✅ **Integração com PostgreSQL** - Controle de status e dados de vídeos/usuários
+- ✅ **Integração com AWS SQS** - Mensageria escalável e gerenciada
+- ✅ **Integração com PostgreSQL (RDS)** - Controle de status e dados de vídeos/usuários
 - ✅ Servidor FastAPI com healthcheck para EKS/Docker
-- ✅ Consumer Kafka rodando em background
+- ✅ Consumer SQS rodando em background com long polling
 - ✅ Extração inteligente de frames (início, meio e fim do vídeo)
 - ✅ Geração automática de ZIP com frames
 - ✅ Upload automático no S3 (pasta `zip/`)
-- ✅ Producer Kafka para notificação de conclusão com dados do usuário
+- ✅ Producer SQS para notificação de conclusão com dados do usuário
 - ✅ Tratamento de erros com atualização de status
 - ✅ Arquitetura Hexagonal (Ports & Adapters)
 - ✅ Logging detalhado por vídeo
 - ✅ Validação de configurações
 - ✅ Documentação automática (Swagger)
+- ✅ Infraestrutura como Código (Terraform)
 
 ## 📦 Pré-requisitos
 
 - Python 3.8+
-- PostgreSQL 12+ (local ou remoto)
-- Kafka rodando (local ou remoto)
-- Conta AWS com acesso ao S3
+- PostgreSQL 12+ (RDS ou local para desenvolvimento)
+- Conta AWS com acesso ao SQS e S3
 - OpenCV (incluído no requirements.txt)
 - Ambiente virtual Python (recomendado)
+
+### Para Desenvolvimento Local
+- Docker e Docker Compose (para LocalStack e PostgreSQL)
+- AWS CLI configurado
 
 ## 🔧 Instalação
 
@@ -68,13 +73,11 @@ Copy-Item .env.example .env
 
 Edite o arquivo `.env` com suas credenciais e configurações:
 
+### Para Produção (AWS Real)
 ```env
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_TOPIC=video-events              # Tópico de entrada
-KAFKA_OUTPUT_TOPIC=video-processed    # Tópico de saída
-KAFKA_GROUP_ID=video-processor-group
-KAFKA_AUTO_OFFSET_RESET=earliest
+# AWS SQS
+SQS_INPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-input-queue
+SQS_OUTPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-output-queue
 
 # AWS S3
 AWS_ACCESS_KEY_ID=sua_access_key
@@ -82,17 +85,42 @@ AWS_SECRET_ACCESS_KEY=sua_secret_key
 AWS_REGION=us-east-1
 S3_BUCKET_NAME=seu-bucket
 
-# PostgreSQL Database
-DB_HOST=localhost
+# PostgreSQL Database (RDS)
+DB_HOST=seu-rds-endpoint.us-east-1.rds.amazonaws.com
 DB_PORT=5432
-DB_NAME=cliptozip
+DB_NAME=videoprocessor
 DB_USER=postgres
-DB_PASSWORD=sua-senha
+DB_PASSWORD=sua-senha-segura
 
 # Aplicação
 LOG_LEVEL=INFO
-APP_NAME=video-processor
+APP_NAME=video-processor-api
 MAX_WORKERS=3  # Número de vídeos processando simultaneamente
+```
+
+### Para Desenvolvimento Local (com LocalStack)
+```env
+# AWS SQS
+SQS_INPUT_QUEUE_URL=http://localhost:4566/000000000000/video-input-queue
+SQS_OUTPUT_QUEUE_URL=http://localhost:4566/000000000000/video-output-queue
+
+# AWS (LocalStack)
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=video-bucket-local
+
+# PostgreSQL Database (local)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=videoprocessor
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Aplicação
+LOG_LEVEL=INFO
+APP_NAME=video-processor-api
+MAX_WORKERS=3
 ```
 
 ## 🗄️ Banco de Dados
@@ -140,9 +168,9 @@ CREATE INDEX idx_app_user_email ON cliptozip."user" USING btree (email);
 | 3 | Finalizado com sucesso |
 | 4 | Erro no processamento |
 
-## 📨 Mensagens Kafka
+## 📨 Mensagens SQS
 
-### Mensagem de Entrada (Tópico: video-events)
+### Mensagem de Entrada (Fila: video-input-queue)
 
 ```json
 {
@@ -151,7 +179,7 @@ CREATE INDEX idx_app_user_email ON cliptozip."user" USING btree (email);
 }
 ```
 
-### Mensagem de Saída - Sucesso (Tópico: video-processed)
+### Mensagem de Saída - Sucesso (Fila: video-output-queue)
 
 ```json
 {
@@ -163,7 +191,7 @@ CREATE INDEX idx_app_user_email ON cliptozip."user" USING btree (email);
 }
 ```
 
-### Mensagem de Saída - Erro (Tópico: video-processed)
+### Mensagem de Saída - Erro (Fila: video-output-queue)
 
 ```json
 {
@@ -178,7 +206,7 @@ CREATE INDEX idx_app_user_email ON cliptozip."user" USING btree (email);
 ## 🔄 Fluxo de Processamento
 
 ```
-📥 Kafka (video-events) - Recebe video_id e path
+📥 SQS (video-input-queue) - Recebe video_id e path
     ↓
 🔍 Busca vídeo e usuário no PostgreSQL pelo video_id
     ↓
@@ -197,7 +225,9 @@ CREATE INDEX idx_app_user_email ON cliptozip."user" USING btree (email);
 ✅ Sucesso: Status = 3 + salva zip_name + envia mensagem com dados do usuário
 ❌ Erro: Status = 4 + envia mensagem de erro com dados do usuário
     ↓
-📤 Kafka (video-processed) - Notificação ao usuário
+📤 SQS (video-output-queue) - Notificação ao usuário
+    ↓
+🗑️ Mensagem deletada da fila de entrada
 ```
 
 ### 🎯 Extração de Frames
@@ -263,7 +293,7 @@ src/
 │       │   └── s3/
 │       │       └── s3_client.py
 │       └── producers/
-│           └── kafka_producer.py
+│           └── sqs_producer.py          # Producer SQS
 │
 ├── config/
 │   └── settings.py           # Configurações
@@ -272,14 +302,32 @@ src/
 
 ## 🚀 Executando a Aplicação
 
-### 1. Inicie os serviços necessários:
+### Opção 1: Desenvolvimento Local (com LocalStack)
+
+#### 1. Inicie os serviços Docker:
 
 ```powershell
-# PostgreSQL deve estar rodando
-# Kafka deve estar rodando
+docker-compose up -d
 ```
 
-### 2. Inicie a aplicação:
+Isso iniciará:
+- PostgreSQL (porta 5432)
+- LocalStack (porta 4566) - simula SQS e S3
+
+#### 2. Inicialize recursos AWS no LocalStack:
+
+```powershell
+# PowerShell
+.\scripts\init-localstack.ps1
+
+# Bash (Linux/Mac)
+chmod +x ./scripts/init-localstack.sh
+./scripts/init-localstack.sh
+```
+
+#### 3. Configure o `.env` conforme mostrado na seção de configuração
+
+#### 4. Inicie a aplicação:
 
 ```powershell
 python -m src.main
@@ -288,34 +336,58 @@ python -m src.main
 O servidor estará disponível em: http://localhost:3000
 
 **Endpoints disponíveis:**
-- `GET /video-processor/health` - Healthcheck para EKS/Docker
-- `GET /video-processor/apidocs` - Documentação interativa (Swagger)
-**Endpoints disponíveis:**
-- `GET /video-processor/health` - Healthcheck para EKS/Docker
-- `GET /video-processor/apidocs` - Documentação interativa (Swagger)
+- `GET /video-processor-api/health` - Healthcheck para EKS/Docker
+- `GET /video-processor-api/apidocs` - Documentação interativa (Swagger)
 
-### 3. Verifique o healthcheck:
+#### 5. Verifique o healthcheck:
 
 ```powershell
 # PowerShell
-Invoke-WebRequest http://localhost:3000/video-processor/health
+Invoke-WebRequest http://localhost:3000/video-processor-api/health
 
 # Ou no navegador:
-# http://localhost:3000/video-processor/health
-# http://localhost:3000/video-processor/apidocs
+# http://localhost:3000/video-processor-api/health
+# http://localhost:3000/video-processor-api/apidocs
 ```
 
-### 4. Envie mensagens de teste:
+#### 6. Envie mensagens de teste para SQS:
 
 ```powershell
-# Use o kafka-console-producer
-kafka-console-producer --broker-list localhost:9092 --topic video-events
+# PowerShell - LocalStack
+aws --endpoint-url=http://localhost:4566 sqs send-message `
+  --queue-url http://localhost:4566/000000000000/video-input-queue `
+  --message-body '{"video_id": "uuid-do-video", "path": "video/teste.mp4"}'
 ```
 
-Digite as mensagens JSON (uma por linha):
-```json
-{"video_id": "uuid-do-video", "path": "video/teste-1.mp4"}
-{"video_id": "uuid-do-video-2", "path": "video/teste-2.mp4"}
+### Opção 2: Produção (AWS Real)
+
+#### 1. Provisione a infraestrutura AWS com Terraform:
+
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+Veja detalhes em [terraform/README.md](terraform/README.md)
+
+#### 2. Configure o `.env` com os valores reais da AWS
+
+Use os outputs do Terraform para preencher as variáveis de ambiente.
+
+#### 3. Inicie a aplicação:
+
+```bash
+python -m src.main
+```
+
+#### 4. Envie mensagens para SQS (AWS Real):
+
+```bash
+aws sqs send-message \
+  --queue-url https://sqs.us-east-1.amazonaws.com/123456789012/video-input-queue \
+  --message-body '{"video_id": "uuid-do-video", "path": "video/teste.mp4"}'
 ```
 
 Para parar, pressione `Ctrl+C`
@@ -329,10 +401,10 @@ INFO - 🚀 Iniciando aplicação...
 INFO - ✅ Conexão com PostgreSQL estabelecida
 INFO - ✅ ThreadPoolExecutor inicializado com 3 workers
 INFO - ✅ S3 Client inicializado
-INFO - ✅ Kafka Producer inicializado
+INFO - ✅ SQS Producer inicializado
 INFO - ✅ Video Processing Service inicializado
 INFO - ✅ Process Video Use Case inicializado
-INFO - ✅ Kafka Consumer inicializado
+INFO - ✅ SQS Consumer inicializado
 INFO - 🎉 Aplicação iniciada com sucesso!
 
 INFO - 🎬 [Video ID: uuid-123] Tarefa submetida para processamento
@@ -621,3 +693,33 @@ Este projeto está sob a licença especificada no arquivo LICENSE.
 ### Arquivo não encontrado no S3
 - Verifique se o campo `s3_key` na mensagem está correto
 - Confirme que o arquivo existe no bucket configurado
+##  Documenta��o Adicional
+
+- [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Guia completo de migra��o do Kafka para SQS
+- [terraform/README.md](terraform/README.md) - Como provisionar infraestrutura AWS com Terraform
+
+##  Migra��o do Kafka para SQS
+
+Esta aplica��o foi migrada do Kafka para AWS SQS. Para detalhes completos sobre:
+- Mudan�as realizadas
+- Compara��o Kafka vs SQS
+- Instru��es de configura��o
+- Permiss�es IAM necess�rias
+
+Consulte: [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
+
+##  Changelog
+
+### v2.0.0 - Migra��o para AWS SQS (2026-02-04)
+-  Migra��o completa de Kafka para AWS SQS
+-  Adicionado suporte para LocalStack (desenvolvimento local)
+-  Criados scripts de inicializa��o de recursos AWS
+-  Adicionada infraestrutura como c�digo (Terraform)
+-  Removidas todas as depend�ncias do Kafka
+-  Atualizada documenta��o completa
+
+### v1.0.0 - Vers�o inicial com Kafka
+-  Processamento de v�deos com Kafka
+-  Integra��o com PostgreSQL
+-  Extra��o de frames e gera��o de ZIP
+-  Upload para S3

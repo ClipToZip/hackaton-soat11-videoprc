@@ -8,19 +8,19 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.config.settings import Settings
-from src.adapters.input.consumers.kafka_consumer import KafkaS3Consumer
+from src.adapters.input.consumers.sqs_consumer import SQSConsumer
 from src.adapters.input.routers import health_controller
 from src.adapters.output.persistence.s3.s3_client import S3Client
-from src.adapters.output.producers.kafka_producer import KafkaProducer
+from src.adapters.output.producers.sqs_producer import SQSProducer
 from src.adapters.output.persistence.database_connection import DatabaseConnection
 from src.adapters.output.persistence.repositories.video_repository import VideoRepository
 from src.application.services.video_processing_service import VideoProcessingService
 from src.application.use_cases.process_video_use_case import ProcessVideoUseCase
 
 # Variáveis globais para gerenciar o consumer e s3_client
-kafka_consumer = None
+sqs_consumer = None
 s3_client = None
-kafka_producer = None
+sqs_producer = None
 db_connection = None
 video_repository = None
 process_video_use_case = None
@@ -55,8 +55,8 @@ def process_video_task(video_id: str, file_content: bytes):
         logger.info(f"Tamanho do arquivo: {len(file_content)} bytes")
         
         # Execute video processing use case
-        output_topic = Settings.KAFKA_OUTPUT_TOPIC
-        success = process_video_use_case.execute(video_id, file_content, output_topic)
+        output_queue_url = Settings.SQS_OUTPUT_QUEUE_URL
+        success = process_video_use_case.execute(video_id, file_content, output_queue_url)
         
         if success:
             logger.info(f"✅ [Video ID: {video_id}] Vídeo processado com sucesso!")
@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
     Inicializa recursos no startup e limpa no shutdown
     """
     logger = logging.getLogger(__name__)
-    global kafka_consumer, s3_client, kafka_producer, process_video_use_case, consumer_thread, executor
+    global sqs_consumer, s3_client, sqs_producer, process_video_use_case, consumer_thread, executor
     global db_connection, video_repository
     global process_video_use_case, consumer_thread, executor
     
@@ -129,9 +129,9 @@ async def lifespan(app: FastAPI):
         s3_client = S3Client()
         logger.info("✅ S3 Client inicializado")
         
-        # Inicializa Kafka Producer
-        kafka_producer = KafkaProducer()
-        logger.info("✅ Kafka Producer inicializado")
+        # Inicializa SQS Producer
+        sqs_producer = SQSProducer()
+        logger.info("✅ SQS Producer inicializado")
         
         # Inicializa Video Processing Service
         video_service = VideoProcessingService()
@@ -140,20 +140,20 @@ async def lifespan(app: FastAPI):
         # Inicializa Use Case
         process_video_use_case = ProcessVideoUseCase(
             storage=s3_client,
-            message_producer=kafka_producer,
+            message_producer=sqs_producer,
             video_service=video_service,
             repository=video_repository
         )
         logger.info("✅ Process Video Use Case inicializado")
         
-        # Inicializa Kafka Consumer
-        kafka_consumer = KafkaS3Consumer(message_handler=custom_message_handler)
-        logger.info("✅ Kafka Consumer inicializado")
+        # Inicializa SQS Consumer
+        sqs_consumer = SQSConsumer(message_handler=custom_message_handler)
+        logger.info("✅ SQS Consumer inicializado")
         
         # Inicia o consumer em uma thread separada
-        consumer_thread = threading.Thread(target=kafka_consumer.start, daemon=True)
+        consumer_thread = threading.Thread(target=sqs_consumer.start, daemon=True)
         consumer_thread.start()
-        logger.info("✅ Kafka Consumer iniciado em background")
+        logger.info("✅ SQS Consumer iniciado em background")
         
         logger.info("🎉 Aplicação iniciada com sucesso!")
         
@@ -169,18 +169,18 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("🛑 Encerrando aplicação...")
     
-    if kafka_consumer:
-        kafka_consumer.stop()
-        logger.info("✅ Kafka Consumer encerrado")
+    if sqs_consumer:
+        sqs_consumer.stop()
+        logger.info("✅ SQS Consumer encerrado")
     
     if executor:
         logger.info("Aguardando finalização de tarefas em andamento...")
         executor.shutdown(wait=True, cancel_futures=False)
         logger.info("✅ ThreadPoolExecutor encerrado")
     
-    if kafka_producer:
-        kafka_producer.close()
-        logger.info("✅ Kafka Producer encerrado")
+    if sqs_producer:
+        sqs_producer.close()
+        logger.info("✅ SQS Producer encerrado")
     
     if db_connection:
         db_connection.close()
@@ -199,8 +199,8 @@ logger = logging.getLogger(__name__)
 
 # Cria a aplicação FastAPI
 app = FastAPI(
-    title="Video Processor - Kafka S3",
-    description="Aplicação para processar eventos do Kafka e buscar arquivos do S3",
+    title="Video Processor - SQS S3",
+    description="Aplicação para processar mensagens do SQS e buscar arquivos do S3",
     version="1.0.0",
     docs_url=f"/{Settings.APP_NAME}/apidocs",
     redoc_url=f"/{Settings.APP_NAME}/redocs",

@@ -10,12 +10,9 @@ load_dotenv()
 class Settings:
     """Classe de configuração da aplicação"""
     
-    # Kafka
-    KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-    KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'video-events')
-    KAFKA_OUTPUT_TOPIC = os.getenv('KAFKA_OUTPUT_TOPIC', 'video-processed')
-    KAFKA_GROUP_ID = os.getenv('KAFKA_GROUP_ID', 'video-processor-group')
-    KAFKA_AUTO_OFFSET_RESET = os.getenv('KAFKA_AUTO_OFFSET_RESET', 'earliest')
+    # AWS SQS
+    SQS_INPUT_QUEUE_URL = os.getenv('SQS_INPUT_QUEUE_URL')
+    SQS_OUTPUT_QUEUE_URL = os.getenv('SQS_OUTPUT_QUEUE_URL')
     
     # AWS S3
     AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
@@ -43,6 +40,8 @@ class Settings:
             ('AWS_SECRET_ACCESS_KEY', cls.AWS_SECRET_ACCESS_KEY),
             ('S3_BUCKET_NAME', cls.S3_BUCKET_NAME),
             ('DB_PASSWORD', cls.DB_PASSWORD),
+            ('SQS_INPUT_QUEUE_URL', cls.SQS_INPUT_QUEUE_URL),
+            ('SQS_OUTPUT_QUEUE_URL', cls.SQS_OUTPUT_QUEUE_URL),
         ]
         
         missing = [name for name, value in required_configs if not value]

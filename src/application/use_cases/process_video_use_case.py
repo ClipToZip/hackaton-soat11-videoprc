@@ -42,26 +42,14 @@ class ProcessVideoUseCase:
         self.repository = repository
         logger.info("ProcessVideoUseCase inicializado")
     
-    def execute(self, video_id: str, file_content: bytes, output_topic: str) -> bool:
+    def execute(self, video_id: str, file_content: bytes, output_queue_url: str) -> bool:
         """
         Execute video processing workflow
         
         Args:
             video_id: ID do vídeo a ser processado
             file_content: Video file content in bytes
-            output_topic: Kafka topic to send completion message
-            
-        Returns:
-            True if processing was successful, False otherwise
-        """
-    def execute(self, video_id: str, file_content: bytes, output_topic: str) -> bool:
-        """
-        Execute video processing workflow
-        
-        Args:
-            video_id: ID do vídeo a ser processado
-            file_content: Video file content in bytes
-            output_topic: Kafka topic to send completion message
+            output_queue_url: SQS queue URL to send completion message
             
         Returns:
             True if processing was successful, False otherwise
@@ -99,7 +87,7 @@ class ProcessVideoUseCase:
             # 4. Save video to temporary file
             temp_video_path = self._save_temp_video(file_content, video_entity.video_name or "video.mp4")
             if not temp_video_path:
-                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                self._handle_processing_error(video_id, video_entity, user_entity, output_queue_url)
                 return False
             
             # 5. Extract frames from video
@@ -108,7 +96,7 @@ class ProcessVideoUseCase:
             
             if not frame_paths or len(frame_paths) == 0:
                 logger.error("Nenhum frame foi extraído do vídeo")
-                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                self._handle_processing_error(video_id, video_entity, user_entity, output_queue_url)
                 return False
             
             logger.info(f"{len(frame_paths)} frames extraídos com sucesso")
@@ -118,7 +106,7 @@ class ProcessVideoUseCase:
             temp_zip_path = self._create_zip_with_frames(frame_paths)
             
             if not temp_zip_path:
-                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                self._handle_processing_error(video_id, video_entity, user_entity, output_queue_url)
                 return False
             
             # 7. Upload ZIP to S3
@@ -129,7 +117,7 @@ class ProcessVideoUseCase:
             
             if not upload_success:
                 logger.error("Falha ao fazer upload do ZIP para S3")
-                self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                self._handle_processing_error(video_id, video_entity, user_entity, output_queue_url)
                 return False
             
             logger.info("ZIP enviado com sucesso para S3")
@@ -141,7 +129,7 @@ class ProcessVideoUseCase:
             
             logger.info("Status atualizado para: 3 (Finalizado)")
             
-            # 9. Send success message to Kafka
+            # 9. Send success message to SQS
             success_message = {
                 "titulo": video_entity.titulo or video_entity.video_name or "Vídeo sem título",
                 "status": "Finalizado",
@@ -150,8 +138,8 @@ class ProcessVideoUseCase:
                 "nomeUsuario": user_entity.name or "Usuário"
             }
             
-            logger.info(f"Enviando mensagem de conclusão para tópico '{output_topic}'")
-            message_sent = self.message_producer.send_message(output_topic, success_message)
+            logger.info(f"Enviando mensagem de conclusão para fila '{output_queue_url}'")
+            message_sent = self.message_producer.send_message(output_queue_url, success_message)
             
             if not message_sent:
                 logger.error("Falha ao enviar mensagem de conclusão")
@@ -167,7 +155,7 @@ class ProcessVideoUseCase:
                 result = self.repository.get_video_with_user(video_id)
                 if result:
                     video_entity, user_entity = result
-                    self._handle_processing_error(video_id, video_entity, user_entity, output_topic)
+                    self._handle_processing_error(video_id, video_entity, user_entity, output_queue_url)
             except:
                 pass
             return False
@@ -181,7 +169,7 @@ class ProcessVideoUseCase:
         video_id: str, 
         video_entity: VideoEntity, 
         user_entity: UserEntity, 
-        output_topic: str
+        output_queue_url: str
     ):
         """
         Trata erro no processamento do vídeo
@@ -190,7 +178,7 @@ class ProcessVideoUseCase:
             video_id: ID do vídeo
             video_entity: Entidade do vídeo
             user_entity: Entidade do usuário
-            output_topic: Tópico Kafka para enviar mensagem
+            output_queue_url: URL da fila SQS para enviar mensagem
         """
         try:
             # Atualizar status para "erro" (4)
@@ -206,8 +194,8 @@ class ProcessVideoUseCase:
                 "nomeUsuario": user_entity.name or "Usuário"
             }
             
-            self.message_producer.send_message(output_topic, error_message)
-            logger.info("Mensagem de erro enviada ao tópico")
+            self.message_producer.send_message(output_queue_url, error_message)
+            logger.info("Mensagem de erro enviada à fila")
             
         except Exception as e:
             logger.error(f"Erro ao tratar falha no processamento: {e}", exc_info=True)

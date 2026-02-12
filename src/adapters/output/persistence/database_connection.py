@@ -40,6 +40,15 @@ class DatabaseConnection:
             self.connection.close()
             logger.info("Conexão com PostgreSQL fechada")
     
+    def rollback(self):
+        """Reverte a transação atual em caso de erro"""
+        if self.connection and not self.connection.closed:
+            try:
+                self.connection.rollback()
+                logger.info("Rollback executado com sucesso")
+            except Exception as e:
+                logger.error(f"Erro ao executar rollback: {e}")
+    
     def get_connection(self):
         """
         Retorna a conexão ativa ou cria uma nova

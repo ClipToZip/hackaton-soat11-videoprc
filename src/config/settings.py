@@ -11,8 +11,8 @@ class Settings:
     """Classe de configuração da aplicação"""
     
     # AWS SQS
-    SQS_INPUT_QUEUE_URL = os.getenv('SQS_INPUT_QUEUE_URL')
-    SQS_OUTPUT_QUEUE_URL = os.getenv('SQS_OUTPUT_QUEUE_URL')
+    CLIPTOZIP_EVENTS_URL = os.getenv('CLIPTOZIP_EVENTS_URL')
+    CLIPTOZIP_NOTIFICATIONS_URL = os.getenv('CLIPTOZIP_NOTIFICATIONS_URL')
     
     # AWS S3
     AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
@@ -40,8 +40,8 @@ class Settings:
             ('AWS_SECRET_ACCESS_KEY', cls.AWS_SECRET_ACCESS_KEY),
             ('S3_BUCKET_NAME', cls.S3_BUCKET_NAME),
             ('DB_PASSWORD', cls.DB_PASSWORD),
-            ('SQS_INPUT_QUEUE_URL', cls.SQS_INPUT_QUEUE_URL),
-            ('SQS_OUTPUT_QUEUE_URL', cls.SQS_OUTPUT_QUEUE_URL),
+            ('CLIPTOZIP_EVENTS_URL', cls.CLIPTOZIP_EVENTS_URL),
+            ('CLIPTOZIP_NOTIFICATIONS_URL', cls.CLIPTOZIP_NOTIFICATIONS_URL),
         ]
         
         missing = [name for name, value in required_configs if not value]

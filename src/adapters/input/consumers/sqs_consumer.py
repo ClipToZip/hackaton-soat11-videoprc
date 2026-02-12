@@ -31,7 +31,7 @@ class SQSConsumer:
             aws_secret_access_key=Settings.AWS_SECRET_ACCESS_KEY
         )
         
-        self.queue_url = Settings.SQS_INPUT_QUEUE_URL
+        self.queue_url = Settings.CLIPTOZIP_EVENTS_URL
         self.s3_client = S3Client()
         self.message_handler = message_handler
         self.running = False

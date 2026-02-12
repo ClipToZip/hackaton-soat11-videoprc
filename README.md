@@ -76,8 +76,8 @@ Edite o arquivo `.env` com suas credenciais e configurações:
 ### Para Produção (AWS Real)
 ```env
 # AWS SQS
-SQS_INPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-input-queue
-SQS_OUTPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-output-queue
+CLIPTOZIP_EVENTS_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-input-queue
+CLIPTOZIP_NOTIFICATIONS_URL=https://sqs.us-east-1.amazonaws.com/123456789012/video-output-queue
 
 # AWS S3
 AWS_ACCESS_KEY_ID=sua_access_key
@@ -101,8 +101,8 @@ MAX_WORKERS=3  # Número de vídeos processando simultaneamente
 ### Para Desenvolvimento Local (com LocalStack)
 ```env
 # AWS SQS
-SQS_INPUT_QUEUE_URL=http://localhost:4566/000000000000/video-input-queue
-SQS_OUTPUT_QUEUE_URL=http://localhost:4566/000000000000/video-output-queue
+CLIPTOZIP_EVENTS_URL=http://localhost:4566/000000000000/video-input-queue
+CLIPTOZIP_NOTIFICATIONS_URL=http://localhost:4566/000000000000/video-output-queue
 
 # AWS (LocalStack)
 AWS_ACCESS_KEY_ID=test
@@ -569,7 +569,7 @@ kubectl apply -f k8s-deployment.yaml
 
 ```powershell
 # Use o kafka-console-producer
-kafka-console-producer --broker-list localhost:9092 --topic video-events
+kafka-console-producer --broker-list localhost:9092 --topic cliptozip-events
 ```
 
 Digite as mensagens JSON (uma por linha):
@@ -651,7 +651,7 @@ Invoke-WebRequest http://localhost:8000/health
 
 ```powershell
 # Use o kafka-console-producer ou sua ferramenta preferida
-kafka-console-producer --broker-list localhost:9092 --topic video-events
+kafka-console-producer --broker-list localhost:9092 --topic cliptozip-events
 
 # Digite a mensagem JSON:
 {"s3_key": "test/video.mp4"}

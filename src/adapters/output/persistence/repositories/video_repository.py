@@ -38,8 +38,14 @@ class VideoRepository(VideoRepositoryPort):
         Returns:
             Tupla com (VideoEntity, UserEntity) ou None se não encontrado
         """
+        cursor = None
         try:
             connection = self.db_connection.get_connection()
+            
+            # Para operações de leitura, usar autocommit evita problemas com transações
+            old_autocommit = connection.autocommit
+            connection.autocommit = True
+            
             cursor = connection.cursor(cursor_factory=RealDictCursor)
             
             query = """
@@ -55,7 +61,9 @@ class VideoRepository(VideoRepositoryPort):
             
             cursor.execute(query, (video_id,))
             row = cursor.fetchone()
-            cursor.close()
+            
+            # Restaurar autocommit original
+            connection.autocommit = old_autocommit
             
             if not row:
                 logger.warning(f"Vídeo não encontrado: {video_id}")
@@ -88,7 +96,12 @@ class VideoRepository(VideoRepositoryPort):
             
         except Exception as e:
             logger.error(f"Erro ao buscar vídeo e usuário: {e}", exc_info=True)
+            # Reverter transação em caso de erro
+            self.db_connection.rollback()
             return None
+        finally:
+            if cursor:
+                cursor.close()
     
     def update_video_status(self, video_id: str, status: int, zip_name: Optional[str] = None) -> bool:
         """
@@ -102,6 +115,7 @@ class VideoRepository(VideoRepositoryPort):
         Returns:
             True se atualizado com sucesso, False caso contrário
         """
+        cursor = None
         try:
             connection = self.db_connection.get_connection()
             cursor = connection.cursor()
@@ -122,13 +136,15 @@ class VideoRepository(VideoRepositoryPort):
                 cursor.execute(query, (status, video_id))
             
             connection.commit()
-            cursor.close()
             
             logger.info(f"Status do vídeo atualizado: {video_id} -> Status: {status}")
             return True
             
         except Exception as e:
             logger.error(f"Erro ao atualizar status do vídeo: {e}", exc_info=True)
-            if connection:
-                connection.rollback()
+            # Reverter transação em caso de erro
+            self.db_connection.rollback()
             return False
+        finally:
+            if cursor:
+                cursor.close()

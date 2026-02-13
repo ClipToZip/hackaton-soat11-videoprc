@@ -60,7 +60,7 @@ class S3Client(StoragePort):
         """
         try:
             logger.info(f"Obtendo conteúdo do arquivo {s3_key} do S3...")
-            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=f"videos/{s3_key}")
             content = response['Body'].read()
             logger.info(f"Arquivo {s3_key} lido com sucesso ({len(content)} bytes)")
             return content

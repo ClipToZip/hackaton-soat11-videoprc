@@ -55,7 +55,7 @@ def process_video_task(video_id: str, file_content: bytes):
         logger.info(f"Tamanho do arquivo: {len(file_content)} bytes")
         
         # Execute video processing use case
-        output_queue_url = Settings.SQS_OUTPUT_QUEUE_URL
+        output_queue_url = Settings.CLIPTOZIP_NOTIFICATIONS_URL
         success = process_video_use_case.execute(video_id, file_content, output_queue_url)
         
         if success:

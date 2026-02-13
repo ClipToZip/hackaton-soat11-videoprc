@@ -5,6 +5,23 @@ import pytest
 import os
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
+
+# Setup environment variables before any other imports
+os.environ.setdefault('AWS_ACCESS_KEY_ID', 'test_access_key')
+os.environ.setdefault('AWS_SECRET_ACCESS_KEY', 'test_secret_key')
+os.environ.setdefault('AWS_REGION', 'us-east-1')
+os.environ.setdefault('S3_BUCKET_NAME', 'test-bucket')
+os.environ.setdefault('DB_HOST', 'localhost')
+os.environ.setdefault('DB_PORT', '5432')
+os.environ.setdefault('DB_NAME', 'testdb')
+os.environ.setdefault('DB_USER', 'testuser')
+os.environ.setdefault('DB_PASSWORD', 'testpass')
+os.environ.setdefault('CLIPTOZIP_EVENTS_URL', 'https://sqs.us-east-1.amazonaws.com/123/events')
+os.environ.setdefault('CLIPTOZIP_NOTIFICATIONS_URL', 'https://sqs.us-east-1.amazonaws.com/123/notifications')
+os.environ.setdefault('LOG_LEVEL', 'INFO')
+os.environ.setdefault('APP_NAME', 'test-app')
+os.environ.setdefault('MAX_WORKERS', '3')
+
 from src.domain.entities.video_entity import VideoEntity
 from src.domain.entities.user_entity import UserEntity
 

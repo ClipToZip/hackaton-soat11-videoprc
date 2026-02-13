@@ -21,15 +21,15 @@ class Settings:
     S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
     
     # Database PostgreSQL
-    DB_HOST = os.getenv('DB_HOST')
-    DB_PORT = int(os.getenv('DB_PORT'))
-    DB_NAME = os.getenv('DB_NAME')
-    DB_USER = os.getenv('DB_USER')
+    DB_HOST = os.getenv('DB_HOST', 'localhost')
+    DB_PORT = int(os.getenv('DB_PORT', '5432'))
+    DB_NAME = os.getenv('DB_NAME', 'postgres')
+    DB_USER = os.getenv('DB_USER', 'postgres')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
     
     # Application
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-    APP_NAME = os.getenv('APP_NAME')
+    APP_NAME = os.getenv('APP_NAME', 'video-processor-app')
     MAX_WORKERS = int(os.getenv('MAX_WORKERS', '3'))  # Número máximo de vídeos processando simultaneamente
     
     @classmethod

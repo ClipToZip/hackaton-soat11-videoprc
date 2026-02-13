@@ -4,11 +4,13 @@ Representa um vídeo no domínio da aplicação
 """
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class VideoEntity(BaseModel):
     """Entidade de vídeo"""
+    model_config = ConfigDict(from_attributes=True)
+
     video_id: str
     user_id: str
     data_video_up: datetime
@@ -19,6 +21,3 @@ class VideoEntity(BaseModel):
     titulo: Optional[str] = None
     metadados: Optional[dict] = None
     path: Optional[str] = None  # Path no S3 (antigo campo)
-    
-    class Config:
-        from_attributes = True

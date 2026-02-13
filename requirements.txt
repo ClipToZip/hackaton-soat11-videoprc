@@ -16,6 +16,9 @@ psycopg2-binary
 
 # Testing
 pytest
+pytest-cov
+pytest-mock
+pytest-asyncio
 
 # Validation
 pydantic

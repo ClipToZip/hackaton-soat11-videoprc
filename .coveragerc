@@ -1,0 +1,23 @@
+[run]
+source = src
+omit = 
+    */main.py
+    */__init__.py
+
+[report]
+# Arquivos a serem excluídos do relatório
+omit = 
+    */main.py
+    */__init__.py
+
+# Ignora arquivos vazios
+skip_empty = True
+
+# Ignora arquivos sem código executável
+skip_covered = False
+
+# Configuração de precisão
+precision = 2
+
+[html]
+directory = htmlcov

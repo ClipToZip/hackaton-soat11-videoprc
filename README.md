@@ -123,12 +123,6 @@ O processamento de vídeos é realizado de forma assíncrona através de:
 
 ---
 
-## 📂 Recursos Adicionais
-
-*   **Postman Collection**: Para facilitar os testes e a integração, disponibilizamos uma collection do Postman com as requisições configuradas.
-    *   [Baixar Collection Postman](docs/ClickToZip-Auth.postman_collection.json)
----
-
 ## 👥 Autores - Grupo 13
 
 | Nome | RM |

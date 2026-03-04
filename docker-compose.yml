@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Postgres Database (simula RDS localmente)
+  postgres:
+    image: postgres:15-alpine
+    container_name: video-processor-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-videoprocessor}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LocalStack - simula serviços AWS localmente (SQS, S3)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: video-processor-localstack
+    ports:
+      - "4566:4566"  # LocalStack endpoint
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=sqs,s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - localstack_data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  localstack_data:

@@ -17,6 +17,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Instala dependências de runtime necessárias para OpenCV headless
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copia dependências instaladas do builder
 COPY --from=builder /root/.local /root/.local
 
@@ -30,11 +40,11 @@ COPY src/ ./src/
 RUN mkdir -p downloads
 
 # Expõe a porta do FastAPI
-EXPOSE 8000
+EXPOSE 3000
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3000/py-cliptozip-video-processor/health')"
 
 # Comando para iniciar a aplicação
 CMD ["python", "-m", "src.main"]
